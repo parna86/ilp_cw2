@@ -5,16 +5,18 @@ import java.net.URI;
 import java.net.http.*;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.util.ArrayList;
+import java.util.List;
 
 import com.google.gson.Gson;
 
 import java.lang.reflect.Type;
-import java.math.BigDecimal;
 
 import com.google.gson.reflect.TypeToken;
+import com.mapbox.geojson.Feature;
 import com.mapbox.geojson.FeatureCollection;
-
-
+import com.mapbox.geojson.Point;
+import com.mapbox.geojson.Polygon;
+import com.mapbox.turf.*;
 
 /**
  * So far, we can send a get request to the required url and get the air quality data as response. Now to create the required files.
@@ -22,6 +24,7 @@ import com.mapbox.geojson.FeatureCollection;
  * 
  * Run WebServer: java -jar WebServerLite.jar
  * Run aqmaps: java -jar aqmaps-0.0.1-SNAPSHOT.jar 15 06 2021 55.9444 -3.1878 5678 80
+ * Turf documentation : https://docs.mapbox.com/android/java/overview/turf/#working-with-geojson
  */
 class Coordinate{
 	double lng;
@@ -89,26 +92,32 @@ public class App
 //        System.out.println(currReadings);
 //        System.out.println(noFlyZones);
         
+        //this is for finding the actual coordinates for each of the ww3 strings - storing data in SensorReadings object only
         Type listType = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
         ArrayList<SensorReadings> readings = new Gson().fromJson(currReadings, listType);
-//        System.out.println(readings.get(0).location);
         for(SensorReadings one : readings) {
         	one.coordinates = convertCoord(one.location);
         }
         
+        //below - extracting each of the coordinates for the buildings in a list of list of points.
+//        Feature f = Feature.fromGeometry(buildings.features().get(0).geometry());
         FeatureCollection buildings = FeatureCollection.fromJson(noFlyZones.toString());
-        System.out.println(buildings.features().size());
-        
-//        System.out.println(readings.get(0).coordinates.lat + " " + readings.get(0).location);
-        
-        //now we have all the sensor readings.
-        // now for the noFlyZones
-        /*trial of convert Coord function - converts ww3 format -> coordinates*/
-//        String sample = "slips.mass.baking";
-//        convertCoord(sample);
+        List<List<Point>> points = new ArrayList<List<Point>>();
+        for(Feature one : buildings.features()) {
+        	Polygon sample = (Polygon) one.geometry();
+        	points.add(sample.coordinates().get(0));
+        }
+        //cant use awt Polygon as that only accepts ints yay
         
     }
     
+    /***
+     * 
+     * @param String threewords : represents the point's ww3 location.
+     * @return Coordinate object with latitude and longitude corresponding to ww3
+     * @throws IOException
+     * @throws InterruptedException
+     */
     public static Coordinate convertCoord(String threewords) throws IOException, InterruptedException {
     	HttpClient client = HttpClient.newHttpClient();
     	
@@ -120,9 +129,9 @@ public class App
     	
     	HttpResponse<String> coord = client.send(requestCoord, BodyHandlers.ofString());
     	
-    	var sensor1 = new Gson().fromJson(coord.body().toString(), ww3ToCoord.class);
+    	var sensorCoord = new Gson().fromJson(coord.body().toString(), ww3ToCoord.class);
     	
-    	return sensor1.coordinates;
+    	return sensorCoord.coordinates;
     }
 }
 
