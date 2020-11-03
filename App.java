@@ -9,7 +9,10 @@ import java.util.ArrayList;
 import com.google.gson.Gson;
 
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
+
 import com.google.gson.reflect.TypeToken;
+import com.mapbox.geojson.FeatureCollection;
 
 
 
@@ -20,6 +23,10 @@ import com.google.gson.reflect.TypeToken;
  * Run WebServer: java -jar WebServerLite.jar
  * Run aqmaps: java -jar aqmaps-0.0.1-SNAPSHOT.jar 15 06 2021 55.9444 -3.1878 5678 80
  */
+class Coordinate{
+	double lng;
+	double lat;
+}
 
 class ww3ToCoord{
 //	String country;
@@ -28,16 +35,14 @@ class ww3ToCoord{
 //	String language;
 //	String map;
 	Coordinate coordinates;
-	public static class Coordinate{
-		double lng;
-		double lat;
-	}
+	
 }
 
 class SensorReadings{
 	String location;
 	double battery;
 	String reading;
+	Coordinate coordinates;
 }
 
 
@@ -50,8 +55,11 @@ public class App
     	 * args[2] = year
     	 * args[1] = month
     	 * args[0] = date
+    	 * args[3] = starting latitude
+    	 * args[4] = starting longitude
     	 * args[6] = port
     	 */
+    	
         HttpClient client = HttpClient.newHttpClient();
         
         /**
@@ -62,6 +70,9 @@ public class App
               .header("Content-type", "application/json")
               .build();
         HttpResponse<String> responseAQ = client.send(requestAQ, BodyHandlers.ofString());
+        
+        double startingLat = Double.parseDouble(args[3]);
+        double startingLong = Double.parseDouble(args[4]);
         
         /**
          * The request for the no-fly zones
@@ -79,20 +90,26 @@ public class App
 //        System.out.println(noFlyZones);
         
         Type listType = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
-        ArrayList<SensorReadings> readingsWW3 = new Gson().fromJson(currReadings, listType);
-        System.out.println(readingsWW3.get(0).location);
-        
-        for(SensorReadings one : readingsWW3) {
-        	
+        ArrayList<SensorReadings> readings = new Gson().fromJson(currReadings, listType);
+//        System.out.println(readings.get(0).location);
+        for(SensorReadings one : readings) {
+        	one.coordinates = convertCoord(one.location);
         }
         
+        FeatureCollection buildings = FeatureCollection.fromJson(noFlyZones.toString());
+        System.out.println(buildings.features().size());
+        
+//        System.out.println(readings.get(0).coordinates.lat + " " + readings.get(0).location);
+        
+        //now we have all the sensor readings.
+        // now for the noFlyZones
         /*trial of convert Coord function - converts ww3 format -> coordinates*/
-        String sample = "slips.mass.baking";
-        convertCoord(sample);
+//        String sample = "slips.mass.baking";
+//        convertCoord(sample);
         
     }
     
-    public static void convertCoord(String threewords) throws IOException, InterruptedException {
+    public static Coordinate convertCoord(String threewords) throws IOException, InterruptedException {
     	HttpClient client = HttpClient.newHttpClient();
     	
     	String words[] = threewords.split("\\.");
@@ -104,7 +121,8 @@ public class App
     	HttpResponse<String> coord = client.send(requestCoord, BodyHandlers.ofString());
     	
     	var sensor1 = new Gson().fromJson(coord.body().toString(), ww3ToCoord.class);
-    	System.out.println(sensor1.coordinates.lat);
+    	
+    	return sensor1.coordinates;
     }
 }
 
