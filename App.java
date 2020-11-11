@@ -116,7 +116,7 @@ public class App
         String move = "";
         var moveCount = 0;
         while(moveCount <= 150) {
-        	BigDecimal minDist = new BigDecimal("-1");
+        	BigDecimal minDist = new BigDecimal("10");
         	int closestIndex = -1;
         	for(SensorReadings one: readings) {
         		BigDecimal[] currPoint = {new BigDecimal(start.latitude()), new BigDecimal(start.longitude())};
@@ -136,10 +136,12 @@ public class App
         	}
         	System.out.println(closestIndex);
         	BigDecimal[] closestPoint = {new BigDecimal(readings.get(closestIndex).coordinates.lat), new BigDecimal(readings.get(closestIndex).coordinates.lng)};
-        	
+        	System.out.println("Closest sensor point to curr point:" + closestPoint[0] + "," + closestPoint[1]);
         	//would've found potentially closest sensor
-        	//now calculate the direction of this point
-//        	var direction = Math.atan2(closestPoint[1].subtract(), x)
+        	//now calculate the direction of this point - this gives direction but we have to think about how to take the 
+        	//multiple of 10 into account
+        	var direction = Math.atan2(closestPoint[1].subtract(new BigDecimal(start.longitude())).doubleValue(), closestPoint[0].subtract(new BigDecimal(start.latitude())).doubleValue());
+        	System.out.println("Direction of movement:"+ direction);
         	moveCount= moveCount+500;
         }
     }
