@@ -30,6 +30,7 @@ import com.mapbox.turf.TurfMeasurement;
  * Turf documentation : https://docs.mapbox.com/android/java/overview/turf/#working-with-geojson
  * 						https://docs.mapbox.com/archive/android/java/api/libjava-turf/4.0.0/com/mapbox/turf/TurfJoins.html
  * To calculate direction of one coordinate: https://docs.oracle.com/javase/7/docs/api/java/lang/Math.html#atan2%28double,%20double%29
+ * https://math.stackexchange.com/questions/796243/how-to-determine-the-direction-of-one-point-from-another-given-their-coordinate
  * "From (𝑥1,𝑦1) to (𝑥2,𝑦2) the direction is atan2(𝑦2−𝑦1,𝑥2−𝑥1) - You wrote you were writing a program, so atan2 
  * is the easiest solution, it's usually found in your languages math package. In java it's Math.atan2(y, x)"
  */						
@@ -87,9 +88,9 @@ public class App
     	String noFlyZones = sendHTTP(BDuri);
     	
     	
-        double startingLat = Double.parseDouble(args[3]);
-        double startingLong = Double.parseDouble(args[4]);
-        var start = Point.fromLngLat(startingLong, startingLat);
+        BigDecimal startingLat = new BigDecimal(args[3]);
+        BigDecimal startingLong = new BigDecimal(args[4]);
+        var start = Point.fromLngLat(startingLong.doubleValue(), startingLat.doubleValue());
         
         
         //this is for finding the actual coordinates for each of the ww3 strings - storing data in SensorReadings object only
@@ -142,6 +143,7 @@ public class App
         	//multiple of 10 into account
         	var direction = Math.atan2(closestPoint[1].subtract(new BigDecimal(start.longitude())).doubleValue(), closestPoint[0].subtract(new BigDecimal(start.latitude())).doubleValue());
         	System.out.println("Direction of movement:"+ direction);
+        	System.out.println("New point:" + Math.sin(direction)*(0.0002) + "," + Math.cos(direction)*(0.0002));
         	moveCount= moveCount+500;
         }
     }
