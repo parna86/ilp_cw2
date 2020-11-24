@@ -35,6 +35,11 @@ import com.mapbox.turf.TurfMeasurement;
  * "From (𝑥1,𝑦1) to (𝑥2,𝑦2) the direction is atan2(𝑦2−𝑦1,𝑥2−𝑥1) - You wrote you were writing a program, so atan2 
  * is the easiest solution, it's usually found in your languages math package. In java it's Math.atan2(y, x)"
  * https://stackoverflow.com/questions/1311049/how-to-map-atan2-to-degrees-0-360
+ * 
+ * THINGS TO BE ADDED (25TH NOV AT 1AM):
+ * - Need to include no fly zones
+ * - need to round off degree to nearest 10s (path becomes a little crooked)
+ * - need to check cases on the Piazza page
  */						
 class Coordinate{
 	double lng;
@@ -139,8 +144,6 @@ public class App
         			continue;
         		}
         		var currDist = euclidDist(currPoint, sensorPoint);
-//        		System.out.println("_________curr dist___________");
-//        		System.out.println(currDist);
         		if(currDist <= 0.0002) {
         			one.isRead = true;
         			break;
@@ -148,23 +151,23 @@ public class App
         		if(minDist > currDist) {
         			minDist = currDist;
         			closestIndex = readings.indexOf(one);
-//        			System.out.println("Point: "+readings.get(closestIndex).coordinates.lat + "," + readings.get(closestIndex).coordinates.lng);
-//        			System.out.println("Closest point updated to idx " + closestIndex);
         		}
-        	}
+        	} // found the closest sensor 
+        	double[] closestPoint = new double[2];
         	if(closestIndex == -1) {
-        		break;
+        		/*no more sensors left - need to go back to starting point */
+        		closestPoint[0] = start.latitude();
+        		closestPoint[1] = start.longitude();
         	}
-        	System.out.println("______________________________________________________\n");
-        	double[] closestPoint = {readings.get(closestIndex).coordinates.lat, readings.get(closestIndex).coordinates.lng};
-//        	System.out.println("Index in sensor readings:" + closestIndex);
-//        	System.out.println("Closest sensor point to curr point:" + closestPoint[0] + "," + closestPoint[1]);
-        	//would've found potentially closest sensor
+        	else {
+        		closestPoint[0] = readings.get(closestIndex).coordinates.lat;
+        		closestPoint[1]= readings.get(closestIndex).coordinates.lng;
+        	} 
+      
         	
-        	/*figure out why the degree version of the direction is not being mapped for now it works*/
+        	/*figure out why the degree version of the direction is not being mapped for now it works 
+        	 * with radians*/
         	var direction = Math.atan2(closestPoint[1] - currPoint[1], closestPoint[0]-currPoint[0]);
-//        	System.out.println("Direction of movement =====================================================");
-//        	System.out.println(direction);
         	if(direction < 0) {
         		direction = direction + 2*Math.PI;
         	}
@@ -177,11 +180,14 @@ public class App
 //        	System.out.println(direction_deg);
         	currPoint[0] = currPoint[0] + Math.cos(direction)*(0.0003);
         	currPoint[1] = currPoint[1] + Math.sin(direction)*(0.0003);
+        	
         	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
-//        	System.out.println("New point:" + currPoint[1] + "," + currPoint[0]);
-//        	System.out.println("______________________________________________________\n");
+        	
         	move = move + currPoint[0] + "," + currPoint[1] + ",";
         	if(euclidDist(currPoint, closestPoint) < 0.0002) {
+        		if(closestPoint[0] == start.latitude() && closestPoint[1] == start.longitude()) {
+            		break;
+        		}
         		readings.get(closestIndex).isRead = true;
         		move = move + readings.get(closestIndex).location + "\n";
         		Point sensorMarker = Point.fromLngLat(currPoint[1], currPoint[0]);
@@ -189,6 +195,7 @@ public class App
         		String[] markerProps = findMarkerProperties(readings.get(closestIndex).battery, readings.get(closestIndex).reading);
         		sensorFeature.addStringProperty("marker-color", markerProps[0]);
         		sensorFeature.addStringProperty("marker-symbol", markerProps[1]);
+        		sensorFeature.addStringProperty("location", readings.get(closestIndex).location);
         		markers.add(sensorFeature);
         	}
         	else {
@@ -205,8 +212,8 @@ public class App
     private static String[] findMarkerProperties(double battery, String reading) {
     	String[] props = new String[2];
     	double reading_n = 999;
-    	if(reading.equals("null")) {
-    		return props;
+    	if(reading.equals("null") || reading.equals("NaN")) {
+    		battery = 0;
     	}
     	else {
     		reading_n = Double.parseDouble(reading);
