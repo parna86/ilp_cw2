@@ -38,11 +38,11 @@ import com.mapbox.turf.TurfMeasurement;
  * 
  * THINGS TO BE ADDED (25TH NOV AT 1AM):
  * - TRY MANUALLY CALCULATING ATAN()
- * - Some moves go over the flyzone
+ * - Some moves go over the flyzone + add a feature of subtracting 0.0001 from the direction (that might be shorter)
  * - need to round off degree to nearest 10s (path becomes a little crooked)
  * - add directions to the flightpath.txt string
  * - need to check cases on the Piazza page
- * - the route doesn't end exactly at the starting point - so need to make it exactly there
+ * - the route doesn't end exactly at 3the starting point - so need to make it exactly there
  */						
 class Coordinate{
 	double lng;
@@ -161,17 +161,14 @@ public class App
         		closestPoint[1]= readings.get(closestIndex).coordinates.lng;
         	} 
       
-        	System.out.println("Closest sensor" + closestPoint[1] + "," + closestPoint[0]);
+//        	System.out.println("Closest sensor" + closestPoint[1] + "," + closestPoint[0]);
         	/*figure out why the degree version of the direction is not being mapped for now it works 
         	 * with radians*/
         	var direction = Math.atan2(closestPoint[1] - currPoint[1], closestPoint[0]-currPoint[0]);
-//        	System.out.println("Degree : " + (Math.toDegrees(direction) + 360) % 360);
-//        	if(direction < 0) {
-//        		direction = direction + 2*Math.PI;
-//        	}
         	move = move + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + "," + "<needtogetdirection>,";
-//        	System.out.println(direction);
         	var direction_deg = Math.toDegrees(direction);
+        	
+//        	System.out.println(direction);
 //        	System.out.println("Tester ones below");
 //        	System.out.println(Math.toDegrees(2*Math.PI));
 //        	System.out.println(Math.toDegrees(Math.PI));
@@ -181,16 +178,14 @@ public class App
 //        	System.out.println("Degree" + direction_deg);
 //        	System.out.println("atan2 of current point: "+ Math.atan2(currPoint[1],currPoint[0]));
 //        	System.out.println("Atan2 of closest point: " + Math.atan2(closestPoint[1], closestPoint[0]));
-        	//ISSUE - IT STILL KINDA FLIES OVER THE NO FLY ZONE
+        	
         	var noFly = true;
         	var temp_lat = currPoint[0];
         	var temp_long = currPoint[1];
         	while(noFly == true) {
         		temp_lat = currPoint[0] + Math.cos(direction)*(0.0003);
             	temp_long = currPoint[1] + Math.sin(direction)*(0.0003);
-            	System.out.println(temp_long +","+ temp_lat);
             	loop_buildingcheck: for(String keys : buildings.keySet()){
-            		System.out.println(keys);
             		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys))) {
             			direction = direction + 0.0001;
             			noFly = true;
@@ -198,11 +193,15 @@ public class App
             		}
             		noFly = false;
             	}
+            	if(noFly == false) {
+            		if(throughNoFlyZone(currPoint, direction, buildings)) {
+            			direction = direction + 0.0001;
+            			noFly = true;
+            		}
+            	}
         	}
         	currPoint[0] = temp_lat;
         	currPoint[1] = temp_long;
-//        	currPoint[0] = currPoint[0] + Math.cos(direction)*(0.0003);
-//        	currPoint[1] = currPoint[1] + Math.sin(direction)*(0.0003);
         	
         	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
         	
@@ -224,9 +223,18 @@ public class App
         	else {
         		move = move + "null\n";
         	}	
-        	moveCount= moveCount+500;
+        	moveCount= moveCount+1;
         }//end of while loop  
-        System.out.println(TurfJoins.inside(Point.fromLngLat(-3.187055, 55.9449326), buildings.get("Informatics Forum")));
+        
+        for(SensorReadings sensor : readings) {
+        	if(!(sensor.isRead)) {
+        		Point unreadSensor = Point.fromLngLat(sensor.coordinates.lng, sensor.coordinates.lat);
+        		Feature markerUnread = Feature.fromGeometry(unreadSensor);
+        		markerUnread.addStringProperty("location", sensor.location);
+        		markers.add(markerUnread);
+        	}
+        }
+        
         markers.add(Feature.fromGeometry(LineString.fromLngLats(line_points)));
         FeatureCollection finalPath = FeatureCollection.fromFeatures(markers);
         writeToFile(finalPath, args[0], args[1], args[2]);
@@ -283,40 +291,55 @@ public class App
     }
     
     
-    private static int fitDirection(double direction) {
-    	if(direction > 5 && direction <= 15) {
-    		return 10;
+//    private static int fitDirection(double direction) {
+//    	if(direction > 5 && direction <= 15) {
+//    		return 10;
+//    	}
+//    	else if(direction > 15 && direction <= 25) {
+//    		return 20;
+//    	}
+//    	else if(direction > 25 && direction <= 35) {
+//    		return 30;
+//    	}
+//    	else if(direction > 35 && direction <= 45) {
+//    		return 40;
+//    	}
+//    	else if(direction > 45 && direction <= 55) {
+//    		return 50;
+//    	}
+//    	else if(direction > 55 && direction <= 65) {
+//    		return 60;
+//    	}
+//    	else if(direction > 65 && direction <= 75) {
+//    		return 70;
+//    	}
+//    	else if(direction > 75 && direction <= 85) {
+//    		return 80;
+//    	}
+//    	else if(direction > 85 && direction <= 95) {
+//    		return 90;
+//    	}
+//    	else if(direction > 95 && direction <= 105) {
+//    		return 100;
+//    	}
+//    	else {
+//    		return 120;
+//    	}
+//    }
+    
+    private static boolean throughNoFlyZone(double[] point1, double direction, Map<String, Polygon> buildings) {
+    	for(double i = 0.00001; i < 0.0003; i += 0.00001) {
+    		var temp_lat = point1[0] + Math.cos(direction)*(i);
+        	var temp_long = point1[1] + Math.sin(direction)*(i);
+        	
+        	for(String keys : buildings.keySet()){
+        		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys))) {
+        			return true;
+        		}
+        	}
+        	
     	}
-    	else if(direction > 15 && direction <= 25) {
-    		return 20;
-    	}
-    	else if(direction > 25 && direction <= 35) {
-    		return 30;
-    	}
-    	else if(direction > 35 && direction <= 45) {
-    		return 40;
-    	}
-    	else if(direction > 45 && direction <= 55) {
-    		return 50;
-    	}
-    	else if(direction > 55 && direction <= 65) {
-    		return 60;
-    	}
-    	else if(direction > 65 && direction <= 75) {
-    		return 70;
-    	}
-    	else if(direction > 75 && direction <= 85) {
-    		return 80;
-    	}
-    	else if(direction > 85 && direction <= 95) {
-    		return 90;
-    	}
-    	else if(direction > 95 && direction <= 105) {
-    		return 100;
-    	}
-    	else {
-    		return 120;
-    	}
+    	return false;
     }
     /***
      * 
