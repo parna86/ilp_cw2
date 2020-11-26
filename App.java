@@ -37,9 +37,12 @@ import com.mapbox.turf.TurfMeasurement;
  * https://stackoverflow.com/questions/1311049/how-to-map-atan2-to-degrees-0-360
  * 
  * THINGS TO BE ADDED (25TH NOV AT 1AM):
- * - Need to include no fly zones
+ * - TRY MANUALLY CALCULATING ATAN()
+ * - Some moves go over the flyzone
  * - need to round off degree to nearest 10s (path becomes a little crooked)
+ * - add directions to the flightpath.txt string
  * - need to check cases on the Piazza page
+ * - the route doesn't end exactly at the starting point - so need to make it exactly there
  */						
 class Coordinate{
 	double lng;
@@ -47,11 +50,7 @@ class Coordinate{
 }
 
 class ww3ToCoord{
-//	String country;
-//	String nearestPlace;
 	String words;
-//	String language;
-//	String map;
 	Coordinate coordinates;
 	
 }
@@ -113,8 +112,6 @@ public class App
         ArrayList<Feature> f = new ArrayList<Feature>(bldgs.features());
         Map<String, Polygon> buildings = new HashMap<String, Polygon>();
         
-        var features = new ArrayList<Feature>();
-        
         /*
          * buildings is a hashmap that stores the polygon that represents each obstacle.  
          */
@@ -164,22 +161,48 @@ public class App
         		closestPoint[1]= readings.get(closestIndex).coordinates.lng;
         	} 
       
-        	
+        	System.out.println("Closest sensor" + closestPoint[1] + "," + closestPoint[0]);
         	/*figure out why the degree version of the direction is not being mapped for now it works 
         	 * with radians*/
         	var direction = Math.atan2(closestPoint[1] - currPoint[1], closestPoint[0]-currPoint[0]);
-        	if(direction < 0) {
-        		direction = direction + 2*Math.PI;
-        	}
+//        	System.out.println("Degree : " + (Math.toDegrees(direction) + 360) % 360);
+//        	if(direction < 0) {
+//        		direction = direction + 2*Math.PI;
+//        	}
         	move = move + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + "," + "<needtogetdirection>,";
 //        	System.out.println(direction);
-//        	var direction_deg = Math.toDegrees(direction);
+        	var direction_deg = Math.toDegrees(direction);
 //        	System.out.println("Tester ones below");
 //        	System.out.println(Math.toDegrees(2*Math.PI));
 //        	System.out.println(Math.toDegrees(Math.PI));
-//        	System.out.println(direction_deg);
-        	currPoint[0] = currPoint[0] + Math.cos(direction)*(0.0003);
-        	currPoint[1] = currPoint[1] + Math.sin(direction)*(0.0003);
+//        	System.out.println(Math.toDegrees(0.0));
+//        	System.out.println("-0.1:" + Math.toDegrees( -0.1));
+//        	System.out.println("0.1: " + Math.toDegrees(0.1));
+//        	System.out.println("Degree" + direction_deg);
+//        	System.out.println("atan2 of current point: "+ Math.atan2(currPoint[1],currPoint[0]));
+//        	System.out.println("Atan2 of closest point: " + Math.atan2(closestPoint[1], closestPoint[0]));
+        	//ISSUE - IT STILL KINDA FLIES OVER THE NO FLY ZONE
+        	var noFly = true;
+        	var temp_lat = currPoint[0];
+        	var temp_long = currPoint[1];
+        	while(noFly == true) {
+        		temp_lat = currPoint[0] + Math.cos(direction)*(0.0003);
+            	temp_long = currPoint[1] + Math.sin(direction)*(0.0003);
+            	System.out.println(temp_long +","+ temp_lat);
+            	loop_buildingcheck: for(String keys : buildings.keySet()){
+            		System.out.println(keys);
+            		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys))) {
+            			direction = direction + 0.0001;
+            			noFly = true;
+            			break loop_buildingcheck;
+            		}
+            		noFly = false;
+            	}
+        	}
+        	currPoint[0] = temp_lat;
+        	currPoint[1] = temp_long;
+//        	currPoint[0] = currPoint[0] + Math.cos(direction)*(0.0003);
+//        	currPoint[1] = currPoint[1] + Math.sin(direction)*(0.0003);
         	
         	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
         	
@@ -201,12 +224,13 @@ public class App
         	else {
         		move = move + "null\n";
         	}	
-        	moveCount= moveCount+1;
-        }//end of while loop
+        	moveCount= moveCount+500;
+        }//end of while loop  
+        System.out.println(TurfJoins.inside(Point.fromLngLat(-3.187055, 55.9449326), buildings.get("Informatics Forum")));
         markers.add(Feature.fromGeometry(LineString.fromLngLats(line_points)));
         FeatureCollection finalPath = FeatureCollection.fromFeatures(markers);
-        writeGeoJSON(finalPath);
-        System.out.println(move);
+        writeToFile(finalPath, args[0], args[1], args[2]);
+        writeToFile(move, args[0], args[1], args[2]);
     }
     
     private static String[] findMarkerProperties(double battery, String reading) {
@@ -367,11 +391,22 @@ public class App
 //    	return distance.sqrt(precision);
     }
     
-    private static void writeGeoJSON(FeatureCollection path) {
+    private static void writeToFile(FeatureCollection path, String date, String month, String year) {
     	try {
-    		File f = new File("heatmap.geojson");
+    		File f = new File("readings-"+date+"-"+month+"-"+year+".geojson");
             FileWriter file = new FileWriter(f);
             file.write(path.toJson());
+            file.close();
+         } catch (IOException e) {
+            e.printStackTrace();
+       }
+    }
+    
+    private static void writeToFile(String moves, String date, String month, String year) {
+    	try {
+    		File f = new File("flightpath-"+date+"-"+month+"-"+year+".txt");
+            FileWriter file = new FileWriter(f);
+            file.write(moves);
             file.close();
          } catch (IOException e) {
             e.printStackTrace();
