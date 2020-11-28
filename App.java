@@ -39,7 +39,6 @@ import com.mapbox.turf.TurfJoins;
  * 
  * java -jar aqmaps-0.0.1-SNAPSHOT.jar 01 01 2020 55.9460 -3.1858 5678 80
  * java -jar aqmaps-0.0.1-SNAPSHOT.jar 12 12 2020 55.9428 -3.1868 5678 80
-
  */						
 
 class Coordinate{
@@ -134,8 +133,8 @@ public class App
         	mapOfNoFlyZones.put(name.substring(1, name.length()-1), (Polygon)oneZone.geometry());
         }
         
-        ArrayList<Feature> sensorMarkers = new ArrayList<Feature>();
-        ArrayList<Point> dronePath = new ArrayList<Point>();
+        var sensorMarkers = new ArrayList<Feature>();
+        var dronePath = new ArrayList<Point>();
         dronePath.add(startingPoint);
         		
         /*MAIN ALGO */
