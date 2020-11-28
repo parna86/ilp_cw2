@@ -44,29 +44,51 @@ import com.mapbox.turf.TurfMeasurement;
  * - need to check cases on the Piazza page
  * - the route doesn't end exactly at the starting point - so need to make it exactly there
  */						
+
 class Coordinate{
-	double lng;
-	double lat;
+	private double lng;
+	private double lat;
+	public double getLatitude() {
+		return lat;
+	}
+	public double getLongitude() {
+		return lng;
+	}
 }
 
 class ww3ToCoord{
-	String words;
+	private String words;
 	Coordinate coordinates;
-	
+	public String getWords() {
+		return words;
+	}
 }
 
 class SensorReadings{
 	private String location;
-	double battery;
-	String reading;
+	private double battery;
+	private String reading;
 	Coordinate coordinates;
-	boolean isRead = false;
+	private boolean isRead = false;
 	
 	public String getLocation() {
 		return location;
 	}
+	public double getBattery() {
+		return battery;
+	}
 	
+	public String getReading() {
+		return reading;
+	}
 	
+	public void setIsRead(boolean isRead) {
+		this.isRead = isRead;
+	}
+	
+	public boolean getIsRead() {
+		return isRead;
+	}
 }
 
 
@@ -104,14 +126,14 @@ public class App
     	String currReadings = sendHTTP(AQuri);
     	String noFlyZones = sendHTTP(BDuri);
     	
-    	//starting point
-        var start = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
+    	
+        var starting_point = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
         
         
         //this is for finding the actual coordinates for each of the ww3 strings - storing data in SensorReadings object only
-        Type listType = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
-        ArrayList<SensorReadings> readings = new Gson().fromJson(currReadings, listType);
-        for(SensorReadings one : readings) {
+        Type listOfSensors = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
+        ArrayList<SensorReadings> sensorData = new Gson().fromJson(currReadings, listOfSensors);
+        for(SensorReadings one : sensorData) {
         	one.coordinates = convertCoord(one.getLocation()); //these are all the readings from one day 
         }
         
@@ -133,10 +155,10 @@ public class App
         //for the geojson file with output path
         ArrayList<Feature> markers = new ArrayList<Feature>();
         ArrayList<Point> line_points = new ArrayList<Point>();
-        line_points.add(start);
+        line_points.add(starting_point);
         		
         /*MAIN ALGO */
-        double[] currPoint = {start.latitude(), start.longitude()};
+        double[] currPoint = {starting_point.latitude(), starting_point.longitude()};
         String move = "";
         var moveCount = 0;
         
@@ -145,30 +167,26 @@ public class App
 //        	System.out.println("Curr Point: " + currPoint[1] + "," + currPoint[0]);
         	double minDist = 10;
         	int closestIndex = -1;
-        	for(SensorReadings one: readings) {
-        		double[] sensorPoint = {one.coordinates.lat, one.coordinates.lng};
-        		if(one.isRead) {
+        	for(SensorReadings one: sensorData) {
+        		double[] sensorPoint = {one.coordinates.getLatitude(), one.coordinates.getLongitude()};
+        		if(one.getIsRead()) {
         			continue;
         		}
-        		var currDist = euclidDist(currPoint, sensorPoint);
-        		if(currDist <= 0.0002) {
-        			one.isRead = true;
-        			break;
-        		}
+        		var currDist = euclidianDistance(currPoint, sensorPoint);
         		if(minDist > currDist) {
         			minDist = currDist;
-        			closestIndex = readings.indexOf(one);
+        			closestIndex = sensorData.indexOf(one);
         		}
         	} // found the closest sensor 
         	double[] closestPoint = new double[2];
         	if(closestIndex == -1) {
         		/*no more sensors left - need to go back to starting point */
-        		closestPoint[0] = start.latitude();
-        		closestPoint[1] = start.longitude();
+        		closestPoint[0] = starting_point.latitude();
+        		closestPoint[1] = starting_point.longitude();
         	}
         	else {
-        		closestPoint[0] = readings.get(closestIndex).coordinates.lat;
-        		closestPoint[1]= readings.get(closestIndex).coordinates.lng;
+        		closestPoint[0] = sensorData.get(closestIndex).coordinates.getLatitude();
+        		closestPoint[1]= sensorData.get(closestIndex).coordinates.getLongitude();
         	} 
         	
         	//somehow only taking it as longdiff, latdiff works....
@@ -178,10 +196,8 @@ public class App
         	var radianTheta = Math.atan2(latDiff, longDiff);
         	var degreeTheta = Math.toDegrees(radianTheta);
         	System.out.println(degreeTheta);
-        	var isNegative = false;
         	if(degreeTheta < 0) {
         		degreeTheta = 360 + degreeTheta;
-        		isNegative = true;
         	}
         	degreeTheta =  10 * Math.round(degreeTheta/10);
         	radianTheta = Math.toRadians(degreeTheta);
@@ -222,21 +238,21 @@ public class App
         	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
         	
         	move = move + currPoint[0] + "," + currPoint[1] + ",";
-        	if(euclidDist(currPoint, closestPoint) < 0.0002) {
+        	if(euclidianDistance(currPoint, closestPoint) < 0.0002) {
         		//if we are near the starting point (should be 0.0003 but ok).
-        		if(closestPoint[0] == start.latitude() && closestPoint[1] == start.longitude()) {
+        		if(closestPoint[0] == starting_point.latitude() && closestPoint[1] == starting_point.longitude()) {
             		break;
         		}
-        		readings.get(closestIndex).isRead = true;
-        		System.out.println("Sensor loc of read: " + readings.get(closestIndex).getLocation());
-        		move = move + readings.get(closestIndex).getLocation() + "\n";
+        		sensorData.get(closestIndex).setIsRead(true);
+        		System.out.println("Sensor loc of read: " + sensorData.get(closestIndex).getLocation());
+        		move = move + sensorData.get(closestIndex).getLocation() + "\n";
         		//adding marker on the sensor that is being read
         		Point sensorMarker = Point.fromLngLat(closestPoint[1], closestPoint[0]);
         		Feature sensorFeature = Feature.fromGeometry(sensorMarker);
-        		String[] markerProps = findMarkerProperties(readings.get(closestIndex).battery, readings.get(closestIndex).reading);
+        		String[] markerProps = findMarkerProperties(sensorData.get(closestIndex).getBattery(), sensorData.get(closestIndex).getReading());
         		sensorFeature.addStringProperty("marker-color", markerProps[0]);
         		sensorFeature.addStringProperty("marker-symbol", markerProps[1]);
-        		sensorFeature.addStringProperty("location", readings.get(closestIndex).getLocation());
+        		sensorFeature.addStringProperty("location", sensorData.get(closestIndex).getLocation());
         		markers.add(sensorFeature);
         	}
         	else {
@@ -245,9 +261,9 @@ public class App
         	moveCount= moveCount+1;
         }//end of while loop  
         
-        for(SensorReadings sensor : readings) {
-        	if(!(sensor.isRead)) {
-        		Point unreadSensor = Point.fromLngLat(sensor.coordinates.lng, sensor.coordinates.lat);
+        for(SensorReadings sensor : sensorData) {
+        	if(!(sensor.getIsRead())) {
+        		Point unreadSensor = Point.fromLngLat(sensor.coordinates.getLongitude(), sensor.coordinates.getLatitude());
         		Feature markerUnread = Feature.fromGeometry(unreadSensor);
         		markerUnread.addStringProperty("location", sensor.getLocation());
         		markers.add(markerUnread);
@@ -389,7 +405,7 @@ public class App
      * @param point2
      * @return distance[] - BigDecimal array that contains sqrt( diffx^2 + diffy^2)
      */
-    public static double euclidDist(double[] point1, double[] point2) {
+    public static double euclidianDistance(double[] point1, double[] point2) {
     	double distance = Math.pow((point1[0] - point2[0]),2) + Math.pow((point1[1] - point2[1]), 2);
     	return Math.sqrt(distance);
 //    	MathContext precision = new MathContext(8);
