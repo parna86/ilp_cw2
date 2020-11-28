@@ -40,9 +40,7 @@ import com.mapbox.turf.TurfMeasurement;
  * - TRY MANUALLY CALCULATING ATAN()
  * - Some moves go over the flyzone + add a feature of subtracting 0.0001 from the direction (that might be shorter) 
  * (above thing needed for 12/12/2020 from our og starting point)
- * -sensor points don't match the points being plotted after calculation (need to move <0.0003)
  * - need to round off degree to nearest 10s (path becomes a little crooked)
- * - add directions to the flightpath.txt string
  * - need to check cases on the Piazza page
  * - the route doesn't end exactly at the starting point - so need to make it exactly there
  */						
@@ -58,11 +56,17 @@ class ww3ToCoord{
 }
 
 class SensorReadings{
-	String location;
+	private String location;
 	double battery;
 	String reading;
 	Coordinate coordinates;
 	boolean isRead = false;
+	
+	public String getLocation() {
+		return location;
+	}
+	
+	
 }
 
 
@@ -108,7 +112,7 @@ public class App
         Type listType = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
         ArrayList<SensorReadings> readings = new Gson().fromJson(currReadings, listType);
         for(SensorReadings one : readings) {
-        	one.coordinates = convertCoord(one.location); //these are all the readings from one day 
+        	one.coordinates = convertCoord(one.getLocation()); //these are all the readings from one day 
         }
         
         //below - extracting each of the coordinates for the buildings in a list of list of points.
@@ -137,8 +141,8 @@ public class App
         var moveCount = 0;
         
         while(moveCount <= 150) {
-        	System.out.println("Move " + moveCount);
-        	System.out.println("Curr Point: " + currPoint[1] + "," + currPoint[0]);
+        	System.out.println("\n\nMove " + moveCount);
+//        	System.out.println("Curr Point: " + currPoint[1] + "," + currPoint[0]);
         	double minDist = 10;
         	int closestIndex = -1;
         	for(SensorReadings one: readings) {
@@ -169,25 +173,34 @@ public class App
         	
         	//somehow only taking it as longdiff, latdiff works....
         	var latDiff = closestPoint[0] - currPoint[0];
-        	var longDiff = closestPoint[1]-currPoint[1];
+        	var longDiff = closestPoint[1] - currPoint[1];
  
-        	var radianTheta = Math.atan2(longDiff, latDiff);
+        	var radianTheta = Math.atan2(latDiff, longDiff);
         	var degreeTheta = Math.toDegrees(radianTheta);
-//        	System.out.println("Radians - output of atan2: " + radianTheta);
-//        	degreeTheta = fitDirection(degreeTheta);
         	System.out.println(degreeTheta);
-        	System.out.println(Math.toRadians(degreeTheta));
-        	move = move + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + "," + fitDirection(degreeTheta) + ",";
+        	var isNegative = false;
+        	if(degreeTheta < 0) {
+        		degreeTheta = 360 + degreeTheta;
+        		isNegative = true;
+        	}
+        	degreeTheta =  10 * Math.round(degreeTheta/10);
+        	radianTheta = Math.toRadians(degreeTheta);
+        	System.out.println(degreeTheta);
+        	move = move + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + ",";
         	
         	var noFly = true;
         	var temp_lat = currPoint[0];
         	var temp_long = currPoint[1];
         	while(noFly == true) {
-        		temp_lat = currPoint[0] + Math.cos(radianTheta)*(0.0003);
-            	temp_long = currPoint[1] + Math.sin(radianTheta)*(0.0003);
+        		temp_lat = currPoint[0] + Math.sin(radianTheta)*(0.0003);
+            	temp_long = currPoint[1] + Math.cos(radianTheta)*(0.0003);
             	loop_buildingcheck: for(String keys : buildings.keySet()){
             		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys)) || !(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), map))) {
-            			radianTheta = radianTheta + 0.0001;
+            			degreeTheta += 10;
+            			if(degreeTheta >= 360){
+            				degreeTheta = degreeTheta % 360;
+            			}
+            			radianTheta = Math.toRadians(degreeTheta);
             			noFly = true;
             			break loop_buildingcheck;
             		}
@@ -195,7 +208,8 @@ public class App
             	}
             	if(noFly == false) {
             		if(throughNoFlyZone(currPoint, radianTheta, buildings)) {
-            			radianTheta = radianTheta + 0.0001;
+            			degreeTheta += 10;
+            			radianTheta = Math.toRadians(degreeTheta);
             			noFly = true;
             		}
             	}
@@ -203,6 +217,8 @@ public class App
         	currPoint[0] = temp_lat;
         	currPoint[1] = temp_long;
         	
+        	move = move + degreeTheta + ",";
+        	System.out.println("Final direction of movement: " + degreeTheta);
         	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
         	
         	move = move + currPoint[0] + "," + currPoint[1] + ",";
@@ -212,14 +228,15 @@ public class App
             		break;
         		}
         		readings.get(closestIndex).isRead = true;
-        		move = move + readings.get(closestIndex).location + "\n";
+        		System.out.println("Sensor loc of read: " + readings.get(closestIndex).getLocation());
+        		move = move + readings.get(closestIndex).getLocation() + "\n";
         		//adding marker on the sensor that is being read
         		Point sensorMarker = Point.fromLngLat(closestPoint[1], closestPoint[0]);
         		Feature sensorFeature = Feature.fromGeometry(sensorMarker);
         		String[] markerProps = findMarkerProperties(readings.get(closestIndex).battery, readings.get(closestIndex).reading);
         		sensorFeature.addStringProperty("marker-color", markerProps[0]);
         		sensorFeature.addStringProperty("marker-symbol", markerProps[1]);
-        		sensorFeature.addStringProperty("location", readings.get(closestIndex).location);
+        		sensorFeature.addStringProperty("location", readings.get(closestIndex).getLocation());
         		markers.add(sensorFeature);
         	}
         	else {
@@ -232,7 +249,7 @@ public class App
         	if(!(sensor.isRead)) {
         		Point unreadSensor = Point.fromLngLat(sensor.coordinates.lng, sensor.coordinates.lat);
         		Feature markerUnread = Feature.fromGeometry(unreadSensor);
-        		markerUnread.addStringProperty("location", sensor.location);
+        		markerUnread.addStringProperty("location", sensor.getLocation());
         		markers.add(markerUnread);
         	}
         }
@@ -292,132 +309,10 @@ public class App
     	return props;
     }
     
-    
-    private static double fitDirection(double direction) {
-    	if(direction < 0) {
-    		direction = Math.abs(direction - 90);
-    	}
-    	else {
-    		direction = Math.round(360 - (direction - 90));
-    		
-    	}
-    	if(direction >= 360) {
-    		return direction%360;
-    	}
-    	return Math.round(direction);
-//    	if(direction >= 5.0 && direction < 15.0) {
-//    		return 10;
-//    	}
-//    	else if(direction >= 15.0 && direction < 25.0) {
-//    		return 20;
-//    	}
-//    	else if(direction >= 25 && direction < 35) {
-//    		return 30;
-//    	}
-//    	else if(direction >= 35 && direction < 45) {
-//    		return 40;
-//    	}
-//    	else if(direction >= 45 && direction < 55) {
-//    		return 50;
-//    	}
-//    	else if(direction >= 55 && direction < 65) {
-//    		return 60;
-//    	}
-//    	else if(direction >= 65 && direction < 75) {
-//    		return 70;
-//    	}
-//    	else if(direction >= 75 && direction < 85) {
-//    		return 80;
-//    	}
-//    	else if(direction >= 85 && direction < 95) {
-//    		return 90;
-//    	}
-//    	else if(direction >= 95 && direction < 105) {
-//    		return 100;
-//    	}
-//    	else if(direction >= 105 && direction < 115){
-//    		return 110;
-//    	}
-//    	else if(direction >= 115 && direction < 125){
-//    		return 120;
-//    	}
-//    	else if(direction >= 125 && direction < 135){
-//    		return 130;
-//    	}
-//    	else if(direction >= 135 && direction < 145){
-//    		return 140;
-//    	}
-//    	else if(direction >= 145 && direction < 155){
-//    		return 150;
-//    	}
-//    	else if(direction >= 155 && direction < 165){
-//    		return 160;
-//    	}
-//    	else if(direction >= 165 && direction < 175){
-//    		return 170;
-//    	}
-//    	else if(direction >= 175 && direction <= 180 || direction < -175){
-//    		return 180;
-//    	}
-//    	else if(direction < -165 && direction >= -175) {
-//    		return 190;
-//    	}
-//    	else if(direction < -155 && direction >= -165) {
-//    		return 200;
-//    	}
-//    	else if(direction < -145 && direction >= -155) {
-//    		return 210;
-//    	}
-//    	else if(direction < -135 && direction >= -145) {
-//    		return 220;
-//    	}
-//    	else if(direction < -125 && direction >= -135) {
-//    		return 230;
-//    	}
-//    	else if(direction < -115 && direction >= -125) {
-//    		return 240;
-//    	}
-//    	else if(direction < -105 && direction >= -115) {
-//    		return 250;
-//    	}
-//    	else if(direction < -95 && direction >= -105) {
-//    		return 260;
-//    	}
-//    	else if(direction < -85 && direction >= -95) {
-//    		return 270;
-//    	}
-//    	else if(direction < -75 && direction >= -85) {
-//    		return 280;
-//    	}
-//    	else if(direction < -65 && direction >= -75) {
-//    		return 290;
-//    	}
-//    	else if(direction < -55 && direction >= -65) {
-//    		return 300;
-//    	}
-//    	else if(direction < -45 && direction >= -55) {
-//    		return 310;
-//    	}
-//    	else if(direction < -35 && direction >= -45) {
-//    		return 320;
-//    	}
-//    	else if(direction < -25 && direction >= -35) {
-//    		return 330;
-//    	}
-//    	else if(direction < -15 && direction >= -25) {
-//    		return 340;
-//    	}
-//    	else if(direction < -5 && direction >= -15) {
-//    		return 350;
-//    	}
-//    	else
-//    		return 0;
-    }
-    
     private static boolean throughNoFlyZone(double[] point1, double direction, Map<String, Polygon> buildings) {
     	for(double i = 0.00001; i < 0.0003; i += 0.00001) {
-    		var temp_lat = point1[0] + Math.cos(direction)*(i);
-        	var temp_long = point1[1] + Math.sin(direction)*(i);
+    		var temp_lat = point1[0] + Math.sin(direction)*(i);
+        	var temp_long = point1[1] + Math.cos(direction)*(i);
         	
         	for(String keys : buildings.keySet()){
         		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys))) {
