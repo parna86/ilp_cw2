@@ -22,7 +22,6 @@ import com.mapbox.geojson.LineString;
 import com.mapbox.geojson.Point;
 import com.mapbox.geojson.Polygon;
 import com.mapbox.turf.TurfJoins;
-import com.mapbox.turf.TurfMeasurement;
 
 /**
  * Things to keep in hand
@@ -36,13 +35,11 @@ import com.mapbox.turf.TurfMeasurement;
  * is the easiest solution, it's usually found in your languages math package. In java it's Math.atan2(y, x)"
  * https://stackoverflow.com/questions/1311049/how-to-map-atan2-to-degrees-0-360
  * 
- * THINGS TO BE ADDED (27TH NOV AT 1AM):
- * - TRY MANUALLY CALCULATING ATAN()
- * - Some moves go over the flyzone + add a feature of subtracting 0.0001 from the direction (that might be shorter) 
- * (above thing needed for 12/12/2020 from our og starting point)
- * - need to round off degree to nearest 10s (path becomes a little crooked)
- * - need to check cases on the Piazza page
- * - the route doesn't end exactly at the starting point - so need to make it exactly there
+ * tricky ones:
+ * 
+ * java -jar aqmaps-0.0.1-SNAPSHOT.jar 01 01 2020 55.9460 -3.1858 5678 80
+ * java -jar aqmaps-0.0.1-SNAPSHOT.jar 12 12 2020 55.9428 -3.1868 5678 80
+
  */						
 
 class Coordinate{
@@ -114,75 +111,46 @@ public class App
     	final var lat_N = (55.946233);
     	final var lat_S = (55.942617);
     	Polygon map = Polygon.fromLngLats(constructMap(lat_N, lat_S, long_E, long_W));
-//    	File afile = new File("map.geojson");
-//        FileWriter file = new FileWriter(afile);
-//        file.write(map.toJson());
-//        file.close();
-
     	
-    	String AQuri = "http://localhost:" + args[6] + "/maps/" + args[2] + "/" + args[1] + "/" + args[0] + "/air-quality-data.json";
-    	String BDuri = "http://localhost:" + args[6] + "/buildings/no-fly-zones.geojson";
+    	String airQualityDataUri = "http://localhost:" + args[6] + "/maps/" + args[2] + "/" + args[1] + "/" + args[0] + "/air-quality-data.json";
+    	String noFlyZonesUri = "http://localhost:" + args[6] + "/buildings/no-fly-zones.geojson";
         
-    	String currReadings = sendHTTP(AQuri);
-    	String noFlyZones = sendHTTP(BDuri);
+    	String currReadings = sendHTTP(airQualityDataUri);
+    	String noFlyZones = sendHTTP(noFlyZonesUri);
     	
-    	
-        var starting_point = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
+        var startingPoint = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
         
-        
-        //this is for finding the actual coordinates for each of the ww3 strings - storing data in SensorReadings object only
         Type listOfSensors = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
         ArrayList<SensorReadings> sensorData = new Gson().fromJson(currReadings, listOfSensors);
-        for(SensorReadings one : sensorData) {
-        	one.coordinates = convertCoord(one.getLocation()); //these are all the readings from one day 
+        for(SensorReadings sensor : sensorData) {
+        	sensor.coordinates = WW3ToCoordinates(sensor.getLocation()); //these are all the readings from one day 
         }
         
-        //below - extracting each of the coordinates for the buildings in a list of list of points.
+        var listOfBuildings = new ArrayList<Feature>(FeatureCollection.fromJson(noFlyZones.toString()).features());
+        var mapOfNoFlyZones = new HashMap<String, Polygon>();
         
-        FeatureCollection bldgs = FeatureCollection.fromJson(noFlyZones.toString());
-        
-        ArrayList<Feature> f = new ArrayList<Feature>(bldgs.features());
-        Map<String, Polygon> buildings = new HashMap<String, Polygon>();
-        
-        /*
-         * buildings is a hashmap that stores the polygon that represents each obstacle.  
-         */
-        for(Feature feature : f) {
-        	String name = feature.properties().get("name").toString();
-        	buildings.put(name.substring(1, name.length()-1), (Polygon)feature.geometry());
+        for(Feature oneZone : listOfBuildings) {
+        	String name = oneZone.properties().get("name").toString();
+        	mapOfNoFlyZones.put(name.substring(1, name.length()-1), (Polygon)oneZone.geometry());
         }
         
-        //for the geojson file with output path
-        ArrayList<Feature> markers = new ArrayList<Feature>();
-        ArrayList<Point> line_points = new ArrayList<Point>();
-        line_points.add(starting_point);
+        ArrayList<Feature> sensorMarkers = new ArrayList<Feature>();
+        ArrayList<Point> dronePath = new ArrayList<Point>();
+        dronePath.add(startingPoint);
         		
         /*MAIN ALGO */
-        double[] currPoint = {starting_point.latitude(), starting_point.longitude()};
-        String move = "";
+        double[] currPoint = {startingPoint.latitude(), startingPoint.longitude()};
+        String droneMoves = "";
         var moveCount = 0;
         
-        while(moveCount <= 150) {
+        droneSearchAlgorithm:while(moveCount <= 150) {
         	System.out.println("\n\nMove " + moveCount);
-//        	System.out.println("Curr Point: " + currPoint[1] + "," + currPoint[0]);
-        	double minDist = 10;
-        	int closestIndex = -1;
-        	for(SensorReadings one: sensorData) {
-        		double[] sensorPoint = {one.coordinates.getLatitude(), one.coordinates.getLongitude()};
-        		if(one.getIsRead()) {
-        			continue;
-        		}
-        		var currDist = euclidianDistance(currPoint, sensorPoint);
-        		if(minDist > currDist) {
-        			minDist = currDist;
-        			closestIndex = sensorData.indexOf(one);
-        		}
-        	} // found the closest sensor 
-        	double[] closestPoint = new double[2];
+        	var closestIndex = findClosestSensor(currPoint, sensorData);
+        	var closestPoint = new double[2];
         	if(closestIndex == -1) {
         		/*no more sensors left - need to go back to starting point */
-        		closestPoint[0] = starting_point.latitude();
-        		closestPoint[1] = starting_point.longitude();
+        		closestPoint[0] = startingPoint.latitude();
+        		closestPoint[1] = startingPoint.longitude();
         	}
         	else {
         		closestPoint[0] = sensorData.get(closestIndex).coordinates.getLatitude();
@@ -202,7 +170,7 @@ public class App
         	degreeTheta =  10 * Math.round(degreeTheta/10);
         	radianTheta = Math.toRadians(degreeTheta);
         	System.out.println(degreeTheta);
-        	move = move + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + ",";
+        	droneMoves = droneMoves + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + ",";
         	
         	var noFly = true;
         	var temp_lat = currPoint[0];
@@ -210,20 +178,20 @@ public class App
         	while(noFly == true) {
         		temp_lat = currPoint[0] + Math.sin(radianTheta)*(0.0003);
             	temp_long = currPoint[1] + Math.cos(radianTheta)*(0.0003);
-            	loop_buildingcheck: for(String keys : buildings.keySet()){
-            		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys)) || !(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), map))) {
+            	insideNoFlyZoneCheck: for(Polygon oneZone : mapOfNoFlyZones.values()){
+            		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), oneZone) || !(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), map))) {
             			degreeTheta += 10;
             			if(degreeTheta >= 360){
             				degreeTheta = degreeTheta % 360;
             			}
             			radianTheta = Math.toRadians(degreeTheta);
             			noFly = true;
-            			break loop_buildingcheck;
+            			break insideNoFlyZoneCheck;
             		}
             		noFly = false;
             	}
             	if(noFly == false) {
-            		if(throughNoFlyZone(currPoint, radianTheta, buildings)) {
+            		if(throughNoFlyZone(currPoint, radianTheta, mapOfNoFlyZones)) {
             			degreeTheta += 10;
             			radianTheta = Math.toRadians(degreeTheta);
             			noFly = true;
@@ -233,19 +201,19 @@ public class App
         	currPoint[0] = temp_lat;
         	currPoint[1] = temp_long;
         	
-        	move = move + degreeTheta + ",";
+        	droneMoves = droneMoves + degreeTheta + ",";
         	System.out.println("Final direction of movement: " + degreeTheta);
-        	line_points.add(Point.fromLngLat(currPoint[1], currPoint[0]));
+        	dronePath.add(Point.fromLngLat(currPoint[1], currPoint[0]));
         	
-        	move = move + currPoint[0] + "," + currPoint[1] + ",";
+        	droneMoves = droneMoves + currPoint[0] + "," + currPoint[1] + ",";
         	if(euclidianDistance(currPoint, closestPoint) < 0.0002) {
         		//if we are near the starting point (should be 0.0003 but ok).
-        		if(closestPoint[0] == starting_point.latitude() && closestPoint[1] == starting_point.longitude()) {
-            		break;
+        		if(closestPoint[0] == startingPoint.latitude() && closestPoint[1] == startingPoint.longitude()) {
+            		break droneSearchAlgorithm;
         		}
         		sensorData.get(closestIndex).setIsRead(true);
         		System.out.println("Sensor loc of read: " + sensorData.get(closestIndex).getLocation());
-        		move = move + sensorData.get(closestIndex).getLocation() + "\n";
+        		droneMoves = droneMoves + sensorData.get(closestIndex).getLocation() + "\n";
         		//adding marker on the sensor that is being read
         		Point sensorMarker = Point.fromLngLat(closestPoint[1], closestPoint[0]);
         		Feature sensorFeature = Feature.fromGeometry(sensorMarker);
@@ -253,10 +221,10 @@ public class App
         		sensorFeature.addStringProperty("marker-color", markerProps[0]);
         		sensorFeature.addStringProperty("marker-symbol", markerProps[1]);
         		sensorFeature.addStringProperty("location", sensorData.get(closestIndex).getLocation());
-        		markers.add(sensorFeature);
+        		sensorMarkers.add(sensorFeature);
         	}
         	else {
-        		move = move + "null\n";
+        		droneMoves = droneMoves + "null\n";
         	}	
         	moveCount= moveCount+1;
         }//end of while loop  
@@ -266,15 +234,16 @@ public class App
         		Point unreadSensor = Point.fromLngLat(sensor.coordinates.getLongitude(), sensor.coordinates.getLatitude());
         		Feature markerUnread = Feature.fromGeometry(unreadSensor);
         		markerUnread.addStringProperty("location", sensor.getLocation());
-        		markers.add(markerUnread);
+        		sensorMarkers.add(markerUnread);
         	}
         }
         
-        markers.add(Feature.fromGeometry(LineString.fromLngLats(line_points)));
-        FeatureCollection finalPath = FeatureCollection.fromFeatures(markers);
+        sensorMarkers.add(Feature.fromGeometry(LineString.fromLngLats(dronePath)));
+        FeatureCollection finalPath = FeatureCollection.fromFeatures(sensorMarkers);
         writeToFile(finalPath, args[0], args[1], args[2]);
-        writeToFile(move, args[0], args[1], args[2]);
-    }
+        writeToFile(droneMoves, args[0], args[1], args[2]);
+        
+    }//end of main
     
     private static String[] findMarkerProperties(double battery, String reading) {
     	String[] props = new String[2];
@@ -330,8 +299,8 @@ public class App
     		var temp_lat = point1[0] + Math.sin(direction)*(i);
         	var temp_long = point1[1] + Math.cos(direction)*(i);
         	
-        	for(String keys : buildings.keySet()){
-        		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), buildings.get(keys))) {
+        	for(Polygon keys : buildings.values()){
+        		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), keys)) {
         			return true;
         		}
         	}
@@ -373,7 +342,7 @@ public class App
      * @throws InterruptedException
      */
     
-    private static Coordinate convertCoord(String threewords) throws IOException, InterruptedException {
+    private static Coordinate WW3ToCoordinates(String threewords) throws IOException, InterruptedException {
     	String words[] = threewords.split("\\.");
     	String ww3uri = "http://localhost:80/words/" + words[0] + "/" + words[1]+ "/" + words[2] + "/details.json";
     	String coord =  sendHTTP(ww3uri);
@@ -390,13 +359,13 @@ public class App
      * @throws InterruptedException
      */
     private static String sendHTTP(String uri) throws IOException, InterruptedException {
-    	HttpClient client = HttpClient.newHttpClient();
-    	HttpRequest request = HttpRequest.newBuilder()
+    	var client = HttpClient.newHttpClient();
+    	final var request = HttpRequest.newBuilder()
                 .uri(URI.create(uri))
                 .header("Content-type", "application/json")
                 .build();
-          HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
-          return response.body();
+        HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
+        return response.body();
     }
     
     /***
@@ -405,33 +374,47 @@ public class App
      * @param point2
      * @return distance[] - BigDecimal array that contains sqrt( diffx^2 + diffy^2)
      */
-    public static double euclidianDistance(double[] point1, double[] point2) {
-    	double distance = Math.pow((point1[0] - point2[0]),2) + Math.pow((point1[1] - point2[1]), 2);
+    private static double euclidianDistance(double[] point1, double[] point2) {
+    	final var distance = Math.pow((point1[0] - point2[0]),2) + Math.pow((point1[1] - point2[1]), 2);
     	return Math.sqrt(distance);
-//    	MathContext precision = new MathContext(8);
-//    	return distance.sqrt(precision);
     }
     
     private static void writeToFile(FeatureCollection path, String date, String month, String year) {
     	try {
-    		File f = new File("readings-"+date+"-"+month+"-"+year+".geojson");
-            FileWriter file = new FileWriter(f);
-            file.write(path.toJson());
-            file.close();
-         } catch (IOException e) {
-            e.printStackTrace();
+    		final File newFile = new File("readings-"+date+"-"+month+"-"+year+".geojson");
+            var fileWrite = new FileWriter(newFile);
+            fileWrite.write(path.toJson());
+            fileWrite.close();
+         } catch (IOException error) {
+            error.printStackTrace();
        }
     }
     
     private static void writeToFile(String moves, String date, String month, String year) {
     	try {
-    		File f = new File("flightpath-"+date+"-"+month+"-"+year+".txt");
-            FileWriter file = new FileWriter(f);
-            file.write(moves);
-            file.close();
-         } catch (IOException e) {
-            e.printStackTrace();
+    		final File newFile = new File("flightpath-"+date+"-"+month+"-"+year+".txt");
+            FileWriter fileWrite = new FileWriter(newFile);
+            fileWrite.write(moves);
+            fileWrite.close();
+         } catch (IOException error) {
+            error.printStackTrace();
        }
     }
+    
+    private static int findClosestSensor(double[] currentLocation, ArrayList<SensorReadings> sensorData) {
+    	var closestIndex = -1;
+    	var minDist = 999.0;
+    	for(SensorReadings currentSensor: sensorData) {
+    		double[] sensorPoint = {currentSensor.coordinates.getLatitude(), currentSensor.coordinates.getLongitude()};
+    		if(currentSensor.getIsRead()) {
+    			continue;
+    		}
+    		var currDist = euclidianDistance(currentLocation, sensorPoint);
+    		if(minDist > currDist) {
+    			minDist = currDist;
+    			closestIndex = sensorData.indexOf(currentSensor);
+    		}
+    	} 
+    	return closestIndex;
+    }
 }
-
