@@ -39,6 +39,9 @@ import com.mapbox.turf.TurfJoins;
  * 
  * java -jar aqmaps-0.0.1-SNAPSHOT.jar 01 01 2020 55.9460 -3.1858 5678 80
  * java -jar aqmaps-0.0.1-SNAPSHOT.jar 12 12 2020 55.9428 -3.1868 5678 80
+ * 
+ * TRY OUT TAKING THE NEAREST MOVE TO THE CLOSEST SENSOR POINT. 
+ * BREADTH FIRST SEARCH
  */						
 
 class Coordinate{
@@ -119,8 +122,17 @@ public class App
     	
         var startingPoint = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
         
+        
+        
+        
+        
         Type listOfSensors = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
         ArrayList<SensorReadings> sensorData = new Gson().fromJson(currReadings, listOfSensors);
+        
+        
+        
+        
+        
         for(SensorReadings sensor : sensorData) {
         	sensor.coordinates = WW3ToCoordinates(sensor.getLocation()); //these are all the readings from one day 
         }
@@ -141,7 +153,8 @@ public class App
         double[] currPoint = {startingPoint.latitude(), startingPoint.longitude()};
         String droneMoves = "";
         var moveCount = 0;
-        
+        double[] previousMove = {startingPoint.latitude(), startingPoint.longitude()};
+        double[] twoMovesBack = {startingPoint.latitude(), startingPoint.longitude()};
         droneSearchAlgorithm:while(moveCount <= 150) {
         	System.out.println("\n\nMove " + moveCount);
         	var closestIndex = findClosestSensor(currPoint, sensorData);
@@ -170,13 +183,16 @@ public class App
         	radianTheta = Math.toRadians(degreeTheta);
         	System.out.println(degreeTheta);
         	droneMoves = droneMoves + (moveCount+1) + "," + currPoint[0] + "," + currPoint[1] + ",";
-        	
+        	var temp_degree = degreeTheta;
         	var noFly = true;
         	var temp_lat = currPoint[0];
         	var temp_long = currPoint[1];
         	while(noFly == true) {
         		temp_lat = currPoint[0] + Math.sin(radianTheta)*(0.0003);
             	temp_long = currPoint[1] + Math.cos(radianTheta)*(0.0003);
+            	System.out.println("\n\nIncrementing:");
+            	System.out.println(temp_lat +"," + temp_long);
+            	System.out.println("Degree: " + degreeTheta);
             	insideNoFlyZoneCheck: for(Polygon oneZone : mapOfNoFlyZones.values()){
             		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), oneZone) || !(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), map))) {
             			degreeTheta += 10;
@@ -190,20 +206,82 @@ public class App
             		noFly = false;
             	}
             	if(noFly == false) {
-            		if(throughNoFlyZone(currPoint, radianTheta, mapOfNoFlyZones)) {
+            		System.out.println("Curr Point:");
+            		System.out.println(temp_lat + "," + temp_long);
+            		System.out.println("Previous Point");
+            		System.out.println(twoMovesBack[0] + "," + twoMovesBack[1]);
+            		if(throughNoFlyZone(currPoint, radianTheta, mapOfNoFlyZones) || (twoMovesBack[0] == temp_lat && twoMovesBack[1] == temp_long)) {
+            			System.out.println("Enters here");
             			degreeTheta += 10;
+            			radianTheta = Math.toRadians(degreeTheta);
+            			noFly = true;
+            			System.out.println("Updated degree: " + degreeTheta);
+            		}
+            	}
+        	}
+        	
+        	System.out.println("Inc Degree: " + degreeTheta + "\n\n");
+        	
+        	noFly = true;
+        	var temp_lat_2 = currPoint[0];
+        	var temp_long_2 = currPoint[1];
+        	var finaldeg = degreeTheta;
+        	degreeTheta = temp_degree;
+        	radianTheta = Math.toRadians(degreeTheta);
+        	while(noFly == true) {
+        		temp_lat_2 = currPoint[0] + Math.sin(radianTheta)*(0.0003);
+        		temp_long_2 = currPoint[1] + Math.cos(radianTheta)*(0.0003);
+        		System.out.println("\n\nDecrementing:");
+            	System.out.println(temp_lat_2 +"," + temp_long_2);
+            	System.out.println("Degree: " + degreeTheta);
+            	insideNoFlyZoneCheck: for(Polygon oneZone : mapOfNoFlyZones.values()){
+            		if(TurfJoins.inside(Point.fromLngLat(temp_long_2, temp_lat_2), oneZone) || !(TurfJoins.inside(Point.fromLngLat(temp_long_2, temp_lat_2), map))) {
+            			degreeTheta -= 10;
+            			if(degreeTheta < 0){
+            				degreeTheta = degreeTheta + 360;
+            			}
+            			radianTheta = Math.toRadians(degreeTheta);
+            			noFly = true;
+            			break insideNoFlyZoneCheck;
+            		}
+            		noFly = false;
+            	}
+            	if(noFly == false) {
+            		System.out.println("Curr Point:");
+            		System.out.println(temp_lat_2 + "," + temp_long_2);
+            		System.out.println("Previous Point");
+            		System.out.println(twoMovesBack[0] + "," + twoMovesBack[1]);
+            		if(throughNoFlyZone(currPoint, radianTheta, mapOfNoFlyZones)|| (twoMovesBack[0] == temp_lat_2 && twoMovesBack[1] == temp_long_2)) {
+            			degreeTheta -= 10;
+            			if(degreeTheta < 0){
+            				degreeTheta = degreeTheta + 360;
+            			}
             			radianTheta = Math.toRadians(degreeTheta);
             			noFly = true;
             		}
             	}
         	}
-        	currPoint[0] = temp_lat;
-        	currPoint[1] = temp_long;
+        	System.out.println("Dec Degree: " + degreeTheta);
+        	double[] p1 = {temp_lat, temp_long};
+        	double[] p2 = {temp_lat_2, temp_long_2};
+        	System.out.println("Inc dist " + euclidianDistance(p1,closestPoint));
+        	System.out.println("Dec dist " + euclidianDistance(p2, closestPoint));
+        	
+        	if(euclidianDistance(p1,closestPoint) <= euclidianDistance(p2, closestPoint)) {
+        		currPoint[0] = temp_lat;
+            	currPoint[1] = temp_long;
+            	degreeTheta = finaldeg;
+        	}
+        	else {
+        		currPoint[0] = temp_lat_2;
+            	currPoint[1] = temp_long_2;
+        	}
+        	
         	
         	droneMoves = droneMoves + degreeTheta + ",";
         	System.out.println("Final direction of movement: " + degreeTheta);
         	dronePath.add(Point.fromLngLat(currPoint[1], currPoint[0]));
-        	
+        	System.out.println("_________________________________________________");
         	droneMoves = droneMoves + currPoint[0] + "," + currPoint[1] + ",";
         	if(euclidianDistance(currPoint, closestPoint) < 0.0002) {
         		//if we are near the starting point (should be 0.0003 but ok).
@@ -225,6 +303,10 @@ public class App
         	else {
         		droneMoves = droneMoves + "null\n";
         	}	
+        	twoMovesBack[0] = previousMove[0];
+        	twoMovesBack[1] = previousMove[1];
+        	previousMove[0] = currPoint[0];
+        	previousMove[1] = currPoint[1];
         	moveCount= moveCount+1;
         }//end of while loop  
         
@@ -416,4 +498,21 @@ public class App
     	} 
     	return closestIndex;
     }
+    
+//    private static boolean furtherNoFlyZone(double[] point1, double direction, Map<String, Polygon> buildings, Polygon map) {
+//    	for(double i = 0.0003; i < 0.008; i += 0.0004) {
+//    		var temp_lat = point1[0] + Math.sin(direction)*(i);
+//        	var temp_long = point1[1] + Math.cos(direction)*(i);
+//        	if(!(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), map))){
+//        		return true;
+//        	}
+//        	for(Polygon keys : buildings.values()){
+//        		if(TurfJoins.inside(Point.fromLngLat(temp_long, temp_lat), keys)) {
+//        			return true;
+//        		}
+//        	}
+//        	
+//    	}
+//    	return false;
+//    }
 }
