@@ -3,11 +3,7 @@ package uk.ac.ed.inf.aqmaps;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
-
 import com.google.gson.Gson;
-
-import java.lang.reflect.Type;
 
 import com.google.gson.reflect.TypeToken;
 import com.mapbox.geojson.Feature;
@@ -15,22 +11,22 @@ import com.mapbox.geojson.FeatureCollection;
 import com.mapbox.geojson.LineString;
 import com.mapbox.geojson.Point;
 import com.mapbox.geojson.Polygon;
-import com.mapbox.turf.TurfJoins;
 
-class WW3ToCoord{
-	private String words;
-	Coordinate coordinates;
-	public String getWords() {
-		return words;
-	}
-}
 
-class SensorReadings{
+class SensorReadings extends HelperFunctions{
 	private String location;
 	private double battery;
 	private String reading;
 	Coordinate coordinates;
 	private boolean isRead = false;
+	
+	public void ww3ToCoord() throws IOException, InterruptedException{
+		String words[] = location.split("\\.");
+    	String ww3uri = "http://localhost:80/words/" + words[0] + "/" + words[1]+ "/" + words[2] + "/details.json";
+    	String coord = sendHTTP(ww3uri);
+    	var sensorCoord = new Gson().fromJson(coord.toString(), WW3ToCoord.class);
+    	this.coordinates = sensorCoord.coordinates;
+	}
 	
 	public String getLocation() {
 		return location;
@@ -50,18 +46,24 @@ class SensorReadings{
 	public boolean getIsRead() {
 		return isRead;
 	}
+	
+	class WW3ToCoord{
+		Coordinate coordinates;
+	}
+	
+	class Coordinate {
+		private double lng;
+		private double lat;
+		public double getLatitude() {
+			return lat;
+		}
+		public double getLongitude() {
+			return lng;
+		}
+	}
+
 }
 
-class Coordinate {
-	private double lng;
-	private double lat;
-	public double getLatitude() {
-		return lat;
-	}
-	public double getLongitude() {
-		return lng;
-	}
-}
 
 /**
  * Things to keep in hand
@@ -96,25 +98,24 @@ public class DroneAlgorithm extends HelperFunctions
     	 * args[6] = port
     	 */
     	
-    	final var long_W = (-3.192473);
-    	final var long_E = (-3.184319);
-    	final var lat_N = (55.946233);
-    	final var lat_S = (55.942617);
-    	Polygon map = Polygon.fromLngLats(constructMap(lat_N, lat_S, long_E, long_W));
+    	final var longW = (-3.192473);
+    	final var longE = (-3.184319);
+    	final var latN = (55.946233);
+    	final var latS = (55.942617);
+    	Polygon map = Polygon.fromLngLats(constructMap(latN, latS, longE, longW));
     	
     	final var airQualityDataUri = "http://localhost:" + args[6] + "/maps/" + args[2] + "/" + args[1] + "/" + args[0] + "/air-quality-data.json";
     	final var noFlyZonesUri = "http://localhost:" + args[6] + "/buildings/no-fly-zones.geojson";
         
     	final String currentSensorReadings = sendHTTP(airQualityDataUri);
     	final String noFlyZones = sendHTTP(noFlyZonesUri);
-    	
+    	System.out.println(currentSensorReadings);
         final var startingPoint = Point.fromLngLat(Double.parseDouble(args[4]), Double.parseDouble(args[3]));
         
-        Type listOfSensors = new TypeToken<ArrayList<SensorReadings>>() {}.getType();
-        ArrayList<SensorReadings> sensorData = new Gson().fromJson(currentSensorReadings, listOfSensors);
+        ArrayList<SensorReadings> sensorData = new Gson().fromJson(currentSensorReadings, new TypeToken<ArrayList<SensorReadings>>() {}.getType());
         
         for(SensorReadings sensor : sensorData) {
-        	sensor.coordinates = WW3ToCoordinates(sensor.getLocation()); //these are all the readings from one day 
+        	sensor.ww3ToCoord(); //these are all the readings from one day 
         }
         
         var listOfBuildings = new ArrayList<Feature>(FeatureCollection.fromJson(noFlyZones.toString()).features());
@@ -136,7 +137,8 @@ public class DroneAlgorithm extends HelperFunctions
         double[] previousMove = {startingPoint.latitude(), startingPoint.longitude()};
         double[] twoMovesBack = {startingPoint.latitude(), startingPoint.longitude()};
         
-        droneSearchAlgorithm:while(moveCount <= 150) {
+        droneSearchAlgorithm: while(moveCount < 150) {
+        	
         	System.out.println("\n\nMove " + moveCount);
         	var closestIndex = findClosestSensor(currPoint, sensorData);
         	var closestPoint = new double[2];
@@ -165,7 +167,7 @@ public class DroneAlgorithm extends HelperFunctions
         	double[] newPointPositive = findDirectionOfNextMove("+", degreeTheta, currPoint, twoMovesBack, mapOfNoFlyZones, map);
         	double[] newPointNegative = findDirectionOfNextMove("-", degreeTheta, currPoint, twoMovesBack, mapOfNoFlyZones, map);
         	
-        	if(euclidianDistance(newPointPositive,closestPoint) <= euclidianDistance(newPointNegative, closestPoint)) {
+        	if(euclideanDistance(newPointPositive,closestPoint) <= euclideanDistance(newPointNegative, closestPoint)) {
         		currPoint[0] = newPointPositive[0];
             	currPoint[1] = newPointPositive[1];
             	degreeTheta = newPointPositive[2];
@@ -176,10 +178,11 @@ public class DroneAlgorithm extends HelperFunctions
             	degreeTheta = newPointNegative[2];
         	}
         	
-        	droneMoves = droneMoves + (int)degreeTheta + ",";
         	dronePath.add(Point.fromLngLat(currPoint[1], currPoint[0]));
-        	droneMoves = droneMoves + currPoint[0] + "," + currPoint[1] + ",";
-        	if(euclidianDistance(currPoint, closestPoint) < 0.0002) {
+        	
+        	droneMoves = droneMoves + (int)degreeTheta + ","+ currPoint[0] + "," + currPoint[1] + ",";
+        	
+        	if(euclideanDistance(currPoint, closestPoint) < 0.0002) {
         		//if we are near the starting point (should be 0.0003 but ok).
         		if(closestPoint[0] == startingPoint.latitude() && closestPoint[1] == startingPoint.longitude()) {
         			droneMoves = droneMoves + "null\n";
@@ -187,13 +190,12 @@ public class DroneAlgorithm extends HelperFunctions
         		}
         		sensorData.get(closestIndex).setIsRead(true);
         		droneMoves = droneMoves + sensorData.get(closestIndex).getLocation() + "\n";
-        		Point sensorMarker = Point.fromLngLat(closestPoint[1], closestPoint[0]);
-        		Feature sensorFeature = Feature.fromGeometry(sensorMarker);
+        		var visitedSensor = Feature.fromGeometry(Point.fromLngLat(closestPoint[1], closestPoint[0]));
         		String[] markerProps = findMarkerProperties(sensorData.get(closestIndex).getBattery(), sensorData.get(closestIndex).getReading());
-        		sensorFeature.addStringProperty("marker-color", markerProps[0]);
-        		sensorFeature.addStringProperty("marker-symbol", markerProps[1]);
-        		sensorFeature.addStringProperty("location", sensorData.get(closestIndex).getLocation());
-        		sensorMarkers.add(sensorFeature);
+        		visitedSensor.addStringProperty("marker-color", markerProps[0]);
+        		visitedSensor.addStringProperty("marker-symbol", markerProps[1]);
+        		visitedSensor.addStringProperty("location", sensorData.get(closestIndex).getLocation());
+        		sensorMarkers.add(visitedSensor);
         	}
         	else {
         		droneMoves = droneMoves + "null\n";
@@ -207,10 +209,9 @@ public class DroneAlgorithm extends HelperFunctions
         
         for(SensorReadings sensor : sensorData) {
         	if(!(sensor.getIsRead())) {
-        		Point unreadSensor = Point.fromLngLat(sensor.coordinates.getLongitude(), sensor.coordinates.getLatitude());
-        		Feature markerUnread = Feature.fromGeometry(unreadSensor);
-        		markerUnread.addStringProperty("location", sensor.getLocation());
-        		sensorMarkers.add(markerUnread);
+        		Feature unreadSensor = Feature.fromGeometry(Point.fromLngLat(sensor.coordinates.getLongitude(), sensor.coordinates.getLatitude()));
+        		unreadSensor.addStringProperty("location", sensor.getLocation());
+        		sensorMarkers.add(unreadSensor);
         	}
         }
         
